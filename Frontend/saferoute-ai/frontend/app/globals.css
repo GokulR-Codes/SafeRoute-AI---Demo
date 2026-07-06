@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+/* 100vh is unreliable on mobile browsers: it's measured against the
+   viewport with the address bar collapsed, so as soon as the page scrolls
+   (even by a pixel) and the browser chrome resizes, anything pinned to
+   100vh gets pushed off-screen or clipped. 100dvh tracks the *current*
+   visible viewport instead. Browsers that don't understand `100dvh` just
+   ignore that line and keep the 100vh above it. */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+body {
+  background: #f6f6f3;
+  color: #14151a;
+}
+
+/* Leaflet ships its own CSS via the JS bundle in leaflet.css; this trims
+   the default control chrome so it sits quietly under our floating UI. */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #eef0ec;
+  font-family: var(--font-inter), sans-serif;
+}
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 8px 20px -6px rgba(20, 21, 26, 0.18) !important;
+  margin: 16px !important;
+}
+
+.leaflet-control-zoom a {
+  border-radius: 12px !important;
+  color: #14151a !important;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+}
+
+.saferoute-marker-pulse {
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.6);
+  animation: sr-pulse 2s infinite;
+}
+
+@keyframes sr-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(47, 111, 237, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(47, 111, 237, 0);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d8d8d3;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
