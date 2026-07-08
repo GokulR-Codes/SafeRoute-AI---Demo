@@ -87,7 +87,7 @@ export default function RoutePlanner() {
             onClick={() => setMode(id)}
             className={`flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-xs font-medium transition ${
               mode === id
-                ? "border-ink bg-ink text-white"
+                ? "border-ink bg-ink text-surface"
                 : "border-line bg-surface text-ink hover:border-ink/40"
             }`}
           >
@@ -103,7 +103,7 @@ export default function RoutePlanner() {
         type="button"
         onClick={handleGenerate}
         disabled={!canGenerate}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-2.5 text-sm font-semibold text-surface transition disabled:cursor-not-allowed disabled:opacity-40"
       >
         {loading ? (
           <>

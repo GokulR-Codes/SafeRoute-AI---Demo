@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Semantic color tokens as space-separated RGB channels so Tailwind can apply
+   alpha (e.g. bg-surface/95). Light is the default; `.dark` on <html> swaps. */
+:root {
+  --canvas: 246 246 243;
+  --surface: 255 255 255;
+  --ink: 20 21 26;
+  --muted: 107 111 118;
+  --line: 231 231 227;
+}
+
+.dark {
+  --canvas: 15 16 20;
+  --surface: 26 28 34;
+  --ink: 236 237 240;
+  --muted: 155 159 167;
+  --line: 46 49 57;
+}
+
 html,
 body {
   height: 100%;
@@ -20,8 +38,8 @@ body {
 }
 
 body {
-  background: #f6f6f3;
-  color: #14151a;
+  background: rgb(var(--canvas));
+  color: rgb(var(--ink));
 }
 
 /* Leaflet ships its own CSS via the JS bundle in leaflet.css; this trims
@@ -41,12 +59,29 @@ body {
 
 .leaflet-control-zoom a {
   border-radius: 12px !important;
-  color: #14151a !important;
+  background: rgb(var(--surface)) !important;
+  color: rgb(var(--ink)) !important;
 }
 
 .leaflet-control-attribution {
   font-size: 10px !important;
-  background: rgba(255, 255, 255, 0.75) !important;
+  background: rgb(var(--surface) / 0.75) !important;
+  color: rgb(var(--muted)) !important;
+}
+
+.leaflet-control-attribution a {
+  color: rgb(var(--muted)) !important;
+}
+
+/* Dark mode: OSM tiles are raster and always light, so tint just the tile
+   layer. The route polyline and markers live in the SVG overlay pane, which
+   this filter doesn't touch -- so their colors stay true. */
+.dark .leaflet-container {
+  background: #0f1014;
+}
+
+.dark .leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9);
 }
 
 .saferoute-marker-pulse {
@@ -73,7 +108,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d8d8d3;
+  background: rgb(var(--line));
   border-radius: 999px;
 }
 

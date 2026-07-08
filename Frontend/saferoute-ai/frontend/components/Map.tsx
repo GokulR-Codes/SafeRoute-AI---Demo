@@ -65,7 +65,7 @@ export default function Map() {
           radius={8}
           pathOptions={{ color: "#2F6FED", fillColor: "#2F6FED", fillOpacity: 1, weight: 3 }}
         >
-          <Tooltip permanent direction="top" offset={[0, -10]} className="!rounded-full !border-none !bg-ink !text-white !text-xs !px-2 !py-1">
+          <Tooltip permanent direction="top" offset={[0, -10]} className="!rounded-full !border-none !bg-ink !text-surface !text-xs !px-2 !py-1">
             {route?.source.area ?? "Start"}
           </Tooltip>
         </CircleMarker>
@@ -77,7 +77,7 @@ export default function Map() {
           radius={9}
           pathOptions={{ color: "#E1483C", fillColor: "#E1483C", fillOpacity: 1, weight: 3 }}
         >
-          <Tooltip permanent direction="top" offset={[0, -10]} className="!rounded-full !border-none !bg-ink !text-white !text-xs !px-2 !py-1">
+          <Tooltip permanent direction="top" offset={[0, -10]} className="!rounded-full !border-none !bg-ink !text-surface !text-xs !px-2 !py-1">
             {route?.dest.area ?? "Destination"}
           </Tooltip>
         </CircleMarker>

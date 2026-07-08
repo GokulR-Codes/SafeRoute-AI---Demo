@@ -10,19 +10,19 @@ A map-first web app for the existing SafeRoute routing engine. The engine
 
 ## How it fits your project folder
 
-Your layout is:
+The layout in this repo is:
 
 ```
-D:\Project\SafeRoute - Demo\
+D:\data\SafeRoute-AI---Demo\SafeRoute-AI---Demo\
   Datasets\Edges - Weights\      graph_nodes.csv, graph_edges.csv, hourly_edge_weights.csv
   Engine\                        safe_route_engine.py   <- untouched
   Routes\                        every generated route's JSON lands here
-  backend\                       <- copy this folder in
-  frontend\                      <- copy this folder in
+  Frontend\saferoute-ai\backend\    the FastAPI wrapper
+  Frontend\saferoute-ai\frontend\   the Next.js app
 ```
 
-Drop the `backend/` and `frontend/` folders from this delivery straight into
-`D:\Project\SafeRoute - Demo\`.
+The env vars below point the backend at `Engine\`, `Datasets\Edges - Weights\`,
+and `Routes\`. If you move the repo, adjust the paths to match.
 
 ## The pipeline, end to end
 
@@ -53,18 +53,23 @@ outputs you provided).
 Requires Python 3.10+ (whatever you already run the engine with — it needs
 `numpy`/`pandas`/`scipy`, which the engine already depends on).
 
-```bat
-cd "D:\Project\SafeRoute - Demo\backend"
+In PowerShell:
+
+```powershell
+cd "D:\data\SafeRoute-AI---Demo\SafeRoute-AI---Demo\Frontend\saferoute-ai\backend"
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-set SAFEROUTE_ENGINE_DIR=D:\Project\SafeRoute - Demo\Engine
-set SAFEROUTE_DATA_DIR=D:\Project\SafeRoute - Demo\Datasets\Edges - Weights
-set SAFEROUTE_OUTPUT_DIR=D:\Project\SafeRoute - Demo\Routes
+$env:SAFEROUTE_ENGINE_DIR="D:\data\SafeRoute-AI---Demo\SafeRoute-AI---Demo\Engine"
+$env:SAFEROUTE_DATA_DIR="D:\data\SafeRoute-AI---Demo\SafeRoute-AI---Demo\Datasets\Edges - Weights"
+$env:SAFEROUTE_OUTPUT_DIR="D:\data\SafeRoute-AI---Demo\SafeRoute-AI---Demo\Routes"
 
 uvicorn main:app --reload --port 8000
 ```
+
+In `cmd.exe`, use `set NAME=value` (no quotes, no `$env:`) instead of the
+`$env:` lines, and `.venv\Scripts\activate` to activate the venv.
 
 If `SAFEROUTE_DATA_DIR` isn't set, it falls back to whatever `DATA_DIR`
 default is already hardcoded in `safe_route_engine.py`. If your CSVs live
@@ -78,8 +83,8 @@ Check it worked: open `http://localhost:8000/api/status` — you should see
 
 Requires Node.js 20+.
 
-```bat
-cd "D:\Project\SafeRoute - Demo\frontend"
+```powershell
+cd "D:\data\SafeRoute-AI---Demo\SafeRoute-AI---Demo\Frontend\saferoute-ai\frontend"
 npm install
 copy .env.local.example .env.local
 npm run dev

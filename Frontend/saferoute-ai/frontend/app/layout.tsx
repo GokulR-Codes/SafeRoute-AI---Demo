@@ -11,9 +11,16 @@ export const metadata: Metadata = {
   description: "Risk-aware routing, visualized on the map.",
 };
 
+// Runs before React hydrates so the correct theme is applied on first paint
+// (no flash) and matches what the client will render (no hydration mismatch).
+const themeScript = `(function(){try{var t=localStorage.getItem('theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className={`${inter.variable} ${spaceGrotesk.variable} font-body antialiased`}>
         {children}
       </body>

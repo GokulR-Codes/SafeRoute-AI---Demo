@@ -14,6 +14,11 @@ export default function RouteDetailsCard() {
   const route = useSafeRouteStore((s) => s.route);
   const loading = useSafeRouteStore((s) => s.loading);
   const error = useSafeRouteStore((s) => s.error);
+  const navigating = useSafeRouteStore((s) => s.navigating);
+  const setNavigating = useSafeRouteStore((s) => s.setNavigating);
+
+  // While navigating, NavigationPanel takes over this slot.
+  if (navigating) return null;
 
   if (error) {
     return (
@@ -70,7 +75,8 @@ export default function RouteDetailsCard() {
 
       <button
         type="button"
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+        onClick={() => setNavigating(true)}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-2.5 text-sm font-semibold text-surface transition hover:opacity-90"
       >
         <Navigation size={15} />
         Start navigation

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { RouteMode, RouteResponse, StatusResponse } from "./types";
+import { getISTHour } from "./utils";
 
 interface SafeRouteState {
   status: StatusResponse | null;
@@ -11,6 +12,7 @@ interface SafeRouteState {
   loading: boolean;
   error: string | null;
   route: RouteResponse | null;
+  navigating: boolean;
 
   setStatus: (s: StatusResponse) => void;
   setAreas: (a: string[]) => void;
@@ -22,6 +24,7 @@ interface SafeRouteState {
   setLoading: (v: boolean) => void;
   setError: (e: string | null) => void;
   setRoute: (r: RouteResponse | null) => void;
+  setNavigating: (v: boolean) => void;
 }
 
 export const useSafeRouteStore = create<SafeRouteState>((set, get) => ({
@@ -30,10 +33,11 @@ export const useSafeRouteStore = create<SafeRouteState>((set, get) => ({
   sourceArea: null,
   destArea: null,
   mode: "balanced",
-  hour: new Date().getHours(),
+  hour: getISTHour(),
   loading: false,
   error: null,
   route: null,
+  navigating: false,
 
   setStatus: (s) => set({ status: s }),
   setAreas: (a) => set({ areas: a }),
@@ -44,5 +48,7 @@ export const useSafeRouteStore = create<SafeRouteState>((set, get) => ({
   setHour: (h) => set({ hour: h }),
   setLoading: (v) => set({ loading: v }),
   setError: (e) => set({ error: e }),
-  setRoute: (r) => set({ route: r }),
+  // A fresh route invalidates any in-progress navigation.
+  setRoute: (r) => set({ route: r, navigating: false }),
+  setNavigating: (v) => set({ navigating: v }),
 }));

@@ -1,15 +1,19 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        canvas: "#F6F6F3",
-        surface: "#FFFFFF",
-        ink: "#14151A",
-        muted: "#6B6F76",
-        line: "#E7E7E3",
+        // Semantic surface tokens are driven by CSS variables (see globals.css)
+        // so they flip between light and dark. `<alpha-value>` keeps Tailwind
+        // opacity modifiers like `bg-surface/95` working.
+        canvas: "rgb(var(--canvas) / <alpha-value>)",
+        surface: "rgb(var(--surface) / <alpha-value>)",
+        ink: "rgb(var(--ink) / <alpha-value>)",
+        muted: "rgb(var(--muted) / <alpha-value>)",
+        line: "rgb(var(--line) / <alpha-value>)",
         route: "#2FAE4E",
         source: "#2F6FED",
         danger: "#E1483C",
