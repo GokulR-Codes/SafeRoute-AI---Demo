@@ -13,6 +13,7 @@ interface SafeRouteState {
   error: string | null;
   route: RouteResponse | null;
   navigating: boolean;
+  showRiskLayer: boolean;
 
   setStatus: (s: StatusResponse) => void;
   setAreas: (a: string[]) => void;
@@ -25,6 +26,7 @@ interface SafeRouteState {
   setError: (e: string | null) => void;
   setRoute: (r: RouteResponse | null) => void;
   setNavigating: (v: boolean) => void;
+  setShowRiskLayer: (v: boolean) => void;
 }
 
 export const useSafeRouteStore = create<SafeRouteState>((set, get) => ({
@@ -38,6 +40,7 @@ export const useSafeRouteStore = create<SafeRouteState>((set, get) => ({
   error: null,
   route: null,
   navigating: false,
+  showRiskLayer: false,
 
   setStatus: (s) => set({ status: s }),
   setAreas: (a) => set({ areas: a }),
@@ -51,4 +54,5 @@ export const useSafeRouteStore = create<SafeRouteState>((set, get) => ({
   // A fresh route invalidates any in-progress navigation.
   setRoute: (r) => set({ route: r, navigating: false }),
   setNavigating: (v) => set({ navigating: v }),
+  setShowRiskLayer: (v) => set({ showRiskLayer: v }),
 }));

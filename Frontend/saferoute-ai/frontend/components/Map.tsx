@@ -4,9 +4,17 @@ import { useEffect, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import type { LatLngExpression, LatLngBoundsExpression } from "leaflet";
 import { useSafeRouteStore } from "@/lib/store";
+import { useRiskFactors } from "@/lib/useRiskFactors";
 
 const DEFAULT_CENTER: LatLngExpression = [12.9716, 77.5946]; // Bengaluru fallback
 const DEFAULT_ZOOM = 13;
+
+// Crime-score → color for the risk overlay (0 safe … 1 risky).
+function riskColor(v: number): string {
+  if (v < 0.33) return "#2FAE4E";
+  if (v < 0.5) return "#D98A16";
+  return "#E1483C";
+}
 
 function FitToRoute({ coordinates }: { coordinates: [number, number][] }) {
   const map = useMap();
@@ -26,6 +34,8 @@ function FitToRoute({ coordinates }: { coordinates: [number, number][] }) {
 
 export default function Map() {
   const route = useSafeRouteStore((s) => s.route);
+  const showRiskLayer = useSafeRouteStore((s) => s.showRiskLayer);
+  const { data: riskFactors } = useRiskFactors(showRiskLayer);
   const mapRef = useRef(null);
 
   const coordinates = useMemo<[number, number][]>(
@@ -42,12 +52,33 @@ export default function Map() {
       center={DEFAULT_CENTER}
       zoom={DEFAULT_ZOOM}
       zoomControl={false}
+      preferCanvas // canvas renderer keeps the ~3.5k risk points fast
       className="h-full w-full"
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+
+      {/* Risk overlay: one dot per location, colored by crime score. Drawn
+          before the route so the active path stays on top. */}
+      {showRiskLayer &&
+        riskFactors?.map((rf) => {
+          const score = typeof rf.crime_score === "number" ? rf.crime_score : 0;
+          const color = riskColor(score);
+          return (
+            <CircleMarker
+              key={rf._id}
+              center={[rf.lat, rf.lng] as LatLngExpression}
+              radius={4}
+              pathOptions={{ color, fillColor: color, fillOpacity: 0.55, weight: 0 }}
+            >
+              <Tooltip direction="top" offset={[0, -4]} className="!rounded-lg !text-xs">
+                {rf.source_area ?? rf.zone ?? "Location"} — crime {score.toFixed(2)}
+              </Tooltip>
+            </CircleMarker>
+          );
+        })}
 
       {coordinates.length > 1 && (
         <>

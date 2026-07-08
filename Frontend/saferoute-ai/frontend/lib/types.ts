@@ -96,6 +96,30 @@ export interface Incident {
   severity: number;
 }
 
+// One document from the MongoDB risk-factor collection (per-location scores).
+// Only the fields the UI reads are typed; the rest pass through via the index
+// signature so nothing is lost.
+export interface RiskFactor {
+  _id: string;
+  zone?: string | null;
+  source_area?: string | null;
+  destination_area?: string | null;
+  road_name?: string | null;
+  lat: number;
+  lng: number;
+  crime_score?: number;
+  lighting_score?: number;
+  road_risk_score?: number;
+  time_risk?: number;
+  [key: string]: unknown;
+}
+
+export interface RiskFactorsResponse {
+  count: number;
+  total: number;
+  risk_factors: RiskFactor[];
+}
+
 export interface RouteResponse {
   source: RoutePoint;
   dest: RoutePoint;

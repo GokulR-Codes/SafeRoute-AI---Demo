@@ -1,5 +1,12 @@
 import axios from "axios";
-import type { AreasResponse, RouteMode, RouteResponse, StatusResponse } from "./types";
+import type {
+  AreasResponse,
+  RiskFactor,
+  RiskFactorsResponse,
+  RouteMode,
+  RouteResponse,
+  StatusResponse,
+} from "./types";
 
 // The backend is the small FastAPI wrapper in /backend that imports
 // safe_route_engine.py in-process. Override with NEXT_PUBLIC_API_BASE if
@@ -33,6 +40,24 @@ export async function generateRoute(params: GenerateRouteParams): Promise<RouteR
     hour: params.hour,
   });
   return data;
+}
+
+export interface RiskFactorParams {
+  zone?: string;
+  sourceArea?: string;
+  limit?: number;
+}
+
+export async function fetchRiskFactors(params?: RiskFactorParams): Promise<RiskFactor[]> {
+  const { data } = await client.get<RiskFactorsResponse>("/api/risk-factors", {
+    params: {
+      zone: params?.zone,
+      source_area: params?.sourceArea,
+      limit: params?.limit,
+    },
+    timeout: 30000, // the full collection is a few thousand docs
+  });
+  return data.risk_factors;
 }
 
 export async function triggerSos(lat: number, lng: number, hour: number) {

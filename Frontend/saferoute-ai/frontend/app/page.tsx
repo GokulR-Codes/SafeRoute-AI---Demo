@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import TopBar from "@/components/TopBar";
 import ThemeToggle from "@/components/ThemeToggle";
+import RiskLayerToggle from "@/components/RiskLayerToggle";
 import RoutePlanner from "@/components/RoutePlanner";
 import RouteDetailsCard from "@/components/RouteDetailsCard";
 import NavigationPanel from "@/components/NavigationPanel";
@@ -59,7 +60,10 @@ export default function Home() {
           <div className="pointer-events-none w-full max-w-sm">
             <TopBar />
           </div>
-          <ThemeToggle />
+          <div className="flex items-start gap-2">
+            <RiskLayerToggle />
+            <ThemeToggle />
+          </div>
         </div>
 
         <div className="flex flex-1 items-start justify-between gap-4">
