@@ -28,11 +28,11 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -49,10 +49,13 @@ if str(ENGINE_DIR) not in sys.path:
 
 import safe_route_engine as engine  # noqa: E402  (sys.path must be set first)
 
+import db  # noqa: E402  (local MongoDB helper; optional, config-gated)
+
 # In-memory state populated once at startup.
 state: Dict[str, Any] = {
     "graph": None,
     "area_index": None,
+    "risk_factors": None,  # list of Mongo docs, or None if Mongo disabled/failed
     "status": {
         "backend_connected": True,
         "graph_loaded": False,
@@ -103,8 +106,25 @@ async def lifespan(app: FastAPI):
             "risk_engine_ready": False,
         }
 
+    # Optional MongoDB layer: load the risk-factor collection once, if
+    # configured. Any failure is non-fatal -- routing does not depend on it.
+    status = cast(Dict[str, Any], state["status"])
+    if db.mongo_configured():
+        try:
+            docs = db.load_risk_factors()
+            state["risk_factors"] = docs
+            status["mongo_connected"] = True
+            status["risk_factor_count"] = len(docs)
+        except Exception as exc:  # noqa: BLE001  (pymongo raises several types)
+            status["mongo_connected"] = False
+            status["risk_factor_count"] = 0
+            state["error"] = f"MongoDB load failed: {exc}"
+    else:
+        status["mongo_connected"] = False
+
     yield
-    # No teardown needed -- the graph is just an in-memory dict.
+    # The graph is just an in-memory dict; only the Mongo client needs closing.
+    db.close_client()
 
 
 app = FastAPI(title="SafeRoute-AI Backend", lifespan=lifespan)
@@ -146,6 +166,32 @@ def get_areas() -> Dict:
 @app.get("/api/modes")
 def get_modes() -> Dict:
     return {"modes": list(engine.MODE_PROFILES.keys())}
+
+
+@app.get("/api/risk-factors")
+def get_risk_factors(
+    zone: Optional[str] = Query(None, description="Filter by zone, e.g. 'CENTRAL BANGALORE'"),
+    source_area: Optional[str] = Query(None, description="Filter by source_area, e.g. 'Shivajinagar'"),
+    limit: Optional[int] = Query(None, ge=0, description="Cap the number of documents returned"),
+) -> Dict:
+    """
+    Per-location risk factors loaded once from MongoDB at startup. Returns 503
+    if Mongo isn't configured or the load failed -- routing is unaffected either
+    way. Optional query params filter the in-memory result.
+    """
+    docs = state["risk_factors"]
+    if docs is None:
+        if not db.mongo_configured():
+            raise HTTPException(
+                status_code=503,
+                detail="MongoDB is not configured. Set MONGODB_URI, MONGODB_DB, MONGODB_COLLECTION.",
+            )
+        raise HTTPException(status_code=503, detail=f"Risk factors unavailable: {state['error']}")
+
+    filtered: List[Dict[str, Any]] = db.filter_risk_factors(
+        docs, zone=zone, source_area=source_area, limit=limit
+    )
+    return {"count": len(filtered), "total": len(docs), "risk_factors": filtered}
 
 
 # ---------------------------------------------------------------------------

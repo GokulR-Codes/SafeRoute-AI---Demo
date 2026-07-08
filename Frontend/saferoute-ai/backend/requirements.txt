@@ -4,3 +4,5 @@ pydantic==2.9.2
 pandas==2.2.2
 numpy==1.26.4
 scipy==1.13.1
+# [srv] pulls in dnspython, required for mongodb+srv:// Atlas connection strings.
+pymongo[srv]==4.7.3

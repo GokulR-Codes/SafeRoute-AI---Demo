@@ -5,16 +5,16 @@ parts you do in order:
 
 1. **Backend** (FastAPI + routing engine) → **Google Cloud Run** (a container).
 2. **Frontend** (Next.js) → **Vercel**, pointed at the backend URL.
-3. **Database** (Supabase) → optional, slots into the backend later.
+3. **Database** (MongoDB) → optional risk-factor layer read by the backend.
 
 ```
   Browser ──HTTPS──▶ Vercel (Next.js UI)
                         │  NEXT_PUBLIC_API_BASE
                         ▼
                      Cloud Run (FastAPI  +  safe_route_engine.py  +  CSV datasets)
-                        │  (later)
+                        │  MONGODB_URI (backend only)
                         ▼
-                     Supabase (edge/incident data)
+                     MongoDB (Central Bangalore risk factors)
 ```
 
 > **Why the backend can't go on Vercel:** it loads the whole graph into memory
@@ -112,6 +112,54 @@ First deploy takes ~4–6 min (installs numpy/pandas/scipy, then builds the
 image). When it finishes, gcloud prints a **Service URL** like
 `https://saferoute-api-xxxxxxxx-el.a.run.app` — that's your `NEXT_PUBLIC_API_BASE`.
 
+### Deploy via the Cloud Console (GUI — no CLI)
+
+Prefer clicking? This connects GitHub once and rebuilds your `Dockerfile`
+automatically on every push to `main`.
+
+1. **Push the repo to GitHub** (Cloud Build pulls from there).
+2. In the Cloud Console, enable the APIs (search each in the top bar → Enable):
+   **Cloud Run Admin API**, **Cloud Build API**, **Artifact Registry API**.
+3. Go to **Cloud Run** → **Create Service**.
+4. Choose **"Continuously deploy from a repository (source or function)"** →
+   click **Set up with Cloud Build**.
+5. **Repository:** click **Manage connected repositories**, authorize the
+   **Google Cloud Build** GitHub app, and select this repo. Back in the panel,
+   pick the repo and **Branch:** `^main$`.
+6. **Build configuration:**
+   - **Build Type:** `Dockerfile`
+   - **Source location:** `/Dockerfile` (it's at the repo root)
+   - Click **Save**.
+7. Back on the service form, set:
+   - **Service name:** `saferoute-api`
+   - **Region:** `asia-south1 (Mumbai)`
+   - **Authentication:** **Allow unauthenticated invocations** (so the frontend
+     can reach it).
+8. Expand **Containers, Volumes, Networking, Security** → **Container** tab:
+   - **Container port:** `8080`
+   - **Memory:** `1 GiB`
+   - **CPU:** `1`
+9. In the same section open the **Autoscaling** settings and set **Minimum
+   number of instances:** `1` (keeps it warm — no cold start). Use `0` to scale
+   to zero and pay nothing when idle.
+10. Click **Create**. Watch the build in **Cloud Build** (~4–6 min the first
+    time). When it's live, the service page shows the **URL** at the top — copy
+    it; that's your `NEXT_PUBLIC_API_BASE`.
+
+> You don't need to set any environment variables in the GUI — the Dockerfile
+> already bakes in `SAFEROUTE_ENGINE_DIR` / `SAFEROUTE_DATA_DIR` /
+> `SAFEROUTE_OUTPUT_DIR`. (To override one anyway: **Variables & Secrets** tab →
+> **Add variable**.)
+>
+> `.gcloudignore` doesn't apply to this GitHub path — Cloud Build clones the
+> whole repo and uses **`.dockerignore`** to keep the frontend out of the image,
+> which the repo already has. `.gcloudignore` only matters for the CLI
+> `--source` upload above.
+
+After the first setup, **every push to `main` auto-builds and deploys** a new
+revision. To change memory/CPU/min-instances later: **Cloud Run** → the service
+→ **Edit & deploy new revision**.
+
 ### Environment variables
 
 The Dockerfile already sets sane defaults, so **you don't have to set anything**.
@@ -202,24 +250,89 @@ Vercel domain plus `http://localhost:3000` for local dev.)
 
 ---
 
-## Part 4 — Supabase (later, when your friend provides the URL)
+## Part 4 — MongoDB (risk-factor collection)
 
-Nothing on the frontend talks to Supabase — **only the backend does**. When the
-Supabase URL/credentials arrive, the integration point is the engine's data
-loading (today it reads local CSVs in `load_graph()` /
-`load_area_index()`). Two common approaches:
+The credentials go on the **backend only** — never the frontend, and never in a
+`NEXT_PUBLIC_*` var (those ship to the browser). The browser talks to the
+backend; only the backend talks to Mongo.
 
-- **Load at startup from Supabase** instead of CSVs — replace the CSV reads with
-  a query, keep everything else identical.
-- **Live incidents** — fetch current incidents from Supabase per request and
-  pass them into `a_star(..., incidents=...)` (the engine already accepts an
-  incidents list).
+The code is already wired up ([backend/db.py](Frontend/saferoute-ai/backend/db.py)
++ [backend/main.py](Frontend/saferoute-ai/backend/main.py)):
 
-Pass the Supabase URL + key to the backend as env vars on deploy (e.g.
-`--set-env-vars SUPABASE_URL=...,SUPABASE_KEY=...`), or store the key in
-[Secret Manager](https://cloud.google.com/run/docs/configuring/services/secrets)
-and mount it — never hardcode them. This is a backend-only change; the frontend
-and Vercel setup don't change.
+- On startup, if all three env vars below are set, it loads the entire
+  collection once into memory. If they're absent or the connection fails, the
+  backend runs exactly as before — **routing does not depend on Mongo** (that
+  still comes from the CSV graph; this collection has no edge topology).
+- It exposes the data read-only at **`GET /api/risk-factors`**, with optional
+  `?zone=`, `?source_area=`, and `?limit=` filters. Response shape:
+  `{ "count": N, "total": M, "risk_factors": [ ...documents... ] }`.
+- `/api/status` gains `mongo_connected` and `risk_factor_count` so you can
+  confirm it loaded.
+
+### Environment variables (all three required to enable Mongo)
+
+| Variable | Example |
+|----------|---------|
+| `MONGODB_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority` |
+| `MONGODB_DB` | your database name |
+| `MONGODB_COLLECTION` | your collection name |
+
+### Set them on Cloud Run
+
+**GUI:** Cloud Run → `saferoute-api` → **Edit & deploy new revision** →
+**Variables & Secrets** → add the three → **Deploy**.
+
+**CLI** (use Secret Manager for the URI so the password isn't in shell history):
+
+```bash
+# Store the URI as a secret once:
+printf '%s' 'mongodb+srv://user:pass@cluster.mongodb.net/...' \
+  | gcloud secrets create mongodb-uri --data-file=-
+
+gcloud run services update saferoute-api --region asia-south1 \
+  --set-secrets 'MONGODB_URI=mongodb-uri:latest' \
+  --set-env-vars 'MONGODB_DB=your_db,MONGODB_COLLECTION=your_collection'
+```
+
+Grant Cloud Run access to the secret if prompted:
+
+```bash
+gcloud secrets add-iam-policy-binding mongodb-uri \
+  --member="serviceAccount:$(gcloud run services describe saferoute-api \
+     --region asia-south1 --format='value(spec.template.spec.serviceAccountName)')" \
+  --role='roles/secretmanager.secretAccessor'
+```
+
+> **Never commit the connection string.** `.gitignore` already ignores `.env` /
+> `.env.local`; keep it there for local dev only.
+
+### Local dev
+
+Set the three vars in your shell before `uvicorn`:
+
+```powershell
+$env:MONGODB_URI="mongodb+srv://..."
+$env:MONGODB_DB="your_db"
+$env:MONGODB_COLLECTION="your_collection"
+uvicorn main:app --reload --port 8000
+```
+
+Then verify: `http://localhost:8000/api/status` shows `"mongo_connected": true`
+with a `risk_factor_count`, and `http://localhost:8000/api/risk-factors?limit=1`
+returns one document.
+
+> **Atlas note:** allow the backend's outbound IP in **Atlas → Network Access**.
+> For Cloud Run (dynamic egress), the simplest demo setting is `0.0.0.0/0`
+> (allow from anywhere); tighten later with a static egress IP / VPC connector.
+
+### Whether this should feed routing
+
+Right now `/api/risk-factors` is a **standalone read layer** — the map/routing
+still use the engine's CSV graph. Your document has lat/lng + risk scores but no
+`u`/`v` edges or hourly columns, so it can't drive A* on its own. If you want
+these factors to influence routes (e.g. overlay them on the map, or blend
+`crime_score`/`lighting_score` into edge costs), tell me the mapping you want and
+I'll wire it into the engine's cost function or the frontend.
 
 ---
 
@@ -247,7 +360,7 @@ and Vercel setup don't change.
 | Cloud Run (backend) | `--min-instances 0` | Effectively free within the always-free tier (2M requests/mo); scales to zero when idle, cold start on wake |
 | Cloud Run (backend) | `--min-instances 1` | ~a few $/mo to keep 1 instance warm (no cold start) — exact cost depends on memory/CPU/region |
 | Cloud Build | per build | Free tier covers ~120 build-min/day; deploys are well within it |
-| Supabase | Free | Free (provided by your friend) |
+| MongoDB (Atlas) | Free (M0) | Free |
 
 A near-free demo is possible with `--min-instances 0` (tradeoff: cold start).
 Use `--min-instances 1` when you want it always responsive. Cloud Run bills per
