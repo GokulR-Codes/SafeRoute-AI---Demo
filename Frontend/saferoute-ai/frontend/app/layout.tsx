@@ -19,7 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* suppressHydrationWarning: some browser extensions rewrite inline
+            scripts before React hydrates, which otherwise trips a (harmless)
+            hydration mismatch on this node. */}
+        <script suppressHydrationWarning dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className={`${inter.variable} ${spaceGrotesk.variable} font-body antialiased`}>
         {children}

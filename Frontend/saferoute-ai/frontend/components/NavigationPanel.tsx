@@ -56,9 +56,9 @@ export default function NavigationPanel() {
   const level = riskLevel(summary.risk_score);
 
   return (
-    <div className="pointer-events-auto flex max-h-full w-[340px] flex-col overflow-hidden rounded-card border border-line bg-surface/95 shadow-floating backdrop-blur">
+    <div className="pointer-events-auto flex max-h-[calc(100dvh-8rem)] w-[340px] flex-col overflow-hidden rounded-card border border-line bg-surface/95 shadow-floating backdrop-blur">
       {/* Header: live route summary */}
-      <div className="border-b border-line p-4">
+      <div className="shrink-0 border-b border-line p-4">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-baseline gap-2">
@@ -125,7 +125,7 @@ export default function NavigationPanel() {
         })}
       </ol>
 
-      <div className="border-t border-line p-3">
+      <div className="shrink-0 border-t border-line p-3">
         <button
           type="button"
           onClick={() => setNavigating(false)}
