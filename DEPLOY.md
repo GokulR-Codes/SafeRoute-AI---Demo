@@ -11,10 +11,10 @@ parts you do in order:
   Browser ──HTTPS──▶ Vercel (Next.js UI)
                         │  NEXT_PUBLIC_API_BASE
                         ▼
-                     Cloud Run (FastAPI  +  safe_route_engine.py  +  CSV datasets)
+                     Cloud Run (FastAPI + safe_route_engine.py + saferoute_graph_engine.py)
                         │  MONGODB_URI (backend only)
                         ▼
-                     MongoDB (Central Bangalore risk factors)
+                     MongoDB (Central Bangalore points → graph built at startup)
 ```
 
 > **Why the backend can't go on Vercel:** it loads the whole graph into memory
@@ -33,17 +33,20 @@ parts you do in order:
 |-------|--------------|---------|
 | FastAPI wrapper | `Frontend/saferoute-ai/backend/` | Cloud Run (in Docker image) |
 | Routing engine | `Engine/safe_route_engine.py` | Cloud Run (in Docker image) |
-| Graph datasets | `Datasets/Edges - Weights/*.csv` (~2.7 MB) | Cloud Run (in Docker image) |
+| Graph builder | `Engine/saferoute_graph_engine.py` | Cloud Run (in Docker image) |
 | Web UI | `Frontend/saferoute-ai/frontend/` | Vercel |
 
-> The engine **cannot run on `safe_route_engine.py` alone** — it builds the
-> graph from the three CSVs (`graph_nodes.csv`, `graph_edges.csv`,
-> `hourly_edge_weights.csv`), so those ship with it. All of the above are
-> already committed to the repo (verified), so the host just clones and builds.
-
-> Note: `main.py` imports **`safe_route_engine.py`** — *not*
-> `saferoute_graph_engine.py`. The Docker image copies the whole `Engine/`
-> folder, so both are present, but only the former is used at runtime.
+> **No datasets ship in the image.** On Cloud Run the backend runs with
+> `SAFEROUTE_GRAPH_SOURCE=mongo`: at startup it pulls the raw Central Bangalore
+> points from MongoDB and `saferoute_graph_engine.py` builds the graph
+> (`graph_nodes`/`graph_edges`/`hourly_edge_weights`) into `/tmp` in memory,
+> then `safe_route_engine.py` routes on it. Verified to reproduce the exact same
+> graph as the old CSVs (2929 nodes / 5675 edges / 379 areas).
+>
+> **This makes MongoDB required for the Cloud Run backend** — if Mongo is
+> unreachable at startup, the graph can't build and `/api/status` reports
+> `graph_loaded: false`. (Local dev is unaffected: it defaults to
+> `SAFEROUTE_GRAPH_SOURCE=csv` and reads the committed CSVs.)
 
 ---
 
@@ -162,14 +165,17 @@ revision. To change memory/CPU/min-instances later: **Cloud Run** → the servic
 
 ### Environment variables
 
-The Dockerfile already sets sane defaults, so **you don't have to set anything**.
-To override, add `--set-env-vars KEY=VALUE` to the deploy command:
+The Dockerfile sets the graph/engine defaults, so the **only** vars you must add
+at deploy time are the three MongoDB ones (see Part 4) — the graph is built from
+Mongo, so without them the backend can't boot its graph.
 
 | Variable | Default (in image) | Purpose |
 |----------|-------------------|---------|
-| `SAFEROUTE_ENGINE_DIR` | `/app/engine` | Folder with `safe_route_engine.py` |
-| `SAFEROUTE_DATA_DIR` | `/app/data` | Folder with the 3 CSVs |
+| `SAFEROUTE_ENGINE_DIR` | `/app/engine` | Folder with the two engine `.py` files |
+| `SAFEROUTE_GRAPH_SOURCE` | `mongo` | `mongo` = build graph from the DB at startup; `csv` = read pre-built CSVs |
+| `SAFEROUTE_DATA_DIR` | `/tmp/saferoute_graph` | Writable dir the generated graph CSVs are written to (in `mongo` mode) / read from (in `csv` mode) |
 | `SAFEROUTE_OUTPUT_DIR` | `/tmp/routes` | Where route JSONs are written (ephemeral — `/tmp` is the only writable path on Cloud Run; fine, since the API also returns the data directly) |
+| `MONGODB_URI` / `MONGODB_DB` / `MONGODB_COLLECTION` | *(unset — you provide)* | The DB the graph + risk factors load from. **Required** in `mongo` mode. See Part 4. |
 | `PORT` | injected by Cloud Run (8080) | Do **not** set this yourself |
 
 ### Verify the backend
@@ -189,11 +195,16 @@ revision with zero downtime.
 
 ### Test the image locally first (optional)
 
+The image builds its graph from Mongo, so pass the three DB vars when running it:
+
 ```bash
 # from the repo root
 docker build -t saferoute-api -f Dockerfile .
-docker run --rm -e PORT=8080 -p 8080:8080 saferoute-api
-# then open http://localhost:8080/api/status
+docker run --rm -e PORT=8080 -p 8080:8080 \
+  -e MONGODB_URI='mongodb+srv://...' -e MONGODB_DB='your_db' \
+  -e MONGODB_COLLECTION='your_collection' \
+  saferoute-api
+# then open http://localhost:8080/api/status  (expect graph_loaded: true)
 ```
 
 <details>
@@ -259,10 +270,13 @@ backend; only the backend talks to Mongo.
 The code is already wired up ([backend/db.py](Frontend/saferoute-ai/backend/db.py)
 + [backend/main.py](Frontend/saferoute-ai/backend/main.py)):
 
-- On startup, if all three env vars below are set, it loads the entire
-  collection once into memory. If they're absent or the connection fails, the
-  backend runs exactly as before — **routing does not depend on Mongo** (that
-  still comes from the CSV graph; this collection has no edge topology).
+- On startup it fetches the collection once. Those raw points serve **two**
+  purposes: in `mongo` graph mode (the Cloud Run default) they're fed to
+  `saferoute_graph_engine.py` to **build the routing graph**, and they're also
+  exposed read-only for the map overlay. So on Cloud Run, **routing depends on
+  Mongo** — if the DB is unreachable at startup, `graph_loaded` is `false`.
+  (Local dev with `SAFEROUTE_GRAPH_SOURCE=csv` routes from the committed CSVs and
+  Mongo stays optional.)
 - It exposes the data read-only at **`GET /api/risk-factors`**, with optional
   `?zone=`, `?source_area=`, and `?limit=` filters. Response shape:
   `{ "count": N, "total": M, "risk_factors": [ ...documents... ] }`.
@@ -327,12 +341,13 @@ returns one document.
 
 ### Whether this should feed routing
 
-Right now `/api/risk-factors` is a **standalone read layer** — the map/routing
-still use the engine's CSV graph. Your document has lat/lng + risk scores but no
-`u`/`v` edges or hourly columns, so it can't drive A* on its own. If you want
-these factors to influence routes (e.g. overlay them on the map, or blend
-`crime_score`/`lighting_score` into edge costs), tell me the mapping you want and
-I'll wire it into the engine's cost function or the frontend.
+These Mongo points already **feed routing indirectly**: `saferoute_graph_engine.py`
+averages their attributes (`road_risk_score`, `congestion_score`, etc.) onto the
+graph edges it builds, and the engine's `routing_cost` uses those. The
+`/api/risk-factors` endpoint is a separate read layer for the map overlay. If you
+want a *different* blend (e.g. weight `crime_score`/`lighting_score` more heavily
+in edge cost, or per-mode), tell me the mapping and I'll adjust the generator or
+the engine's cost function.
 
 ---
 
@@ -340,12 +355,12 @@ I'll wire it into the engine's cost function or the frontend.
 
 | Symptom | Cause / Fix |
 |---------|-------------|
-| `/api/status` shows `graph_loaded: false` | The CSVs weren't found. Confirm `Datasets/Edges - Weights/*.csv` are committed and the Docker build copied them to `/app/data`. Check the Cloud Build logs for the `COPY` step, or the Cloud Run logs for the startup error. |
+| `/api/status` shows `graph_loaded: false` | In `mongo` mode the graph couldn't be built — usually MongoDB is unreachable or the collection is empty. Confirm `MONGODB_URI/DB/COLLECTION` are set on the service, that Atlas **Network Access** allows Cloud Run, and check the Cloud Run logs for the startup error (they print the node/edge counts on success). |
 | Frontend shows "Can't reach the backend" | `NEXT_PUBLIC_API_BASE` is wrong/missing, or CORS blocked it. Verify the value has no trailing slash and matches the live Cloud Run URL; check the browser console for a CORS error. |
 | `403 Forbidden` when the frontend calls the API | The service wasn't deployed with `--allow-unauthenticated`. Re-run the deploy with that flag (or `gcloud run services add-iam-policy-binding saferoute-api --member=allUsers --role=roles/run.invoker`). |
 | Container fails to start / "did not listen on PORT" | Something bound the wrong port. The Dockerfile binds `$PORT`; don't hardcode a port or set `PORT` yourself. |
 | First request very slow, then fine | Cold start if `--min-instances 0` — the container boots and reloads the graph. Set `--min-instances 1` to avoid it. |
-| Build fails on `COPY ["Datasets/Edges - Weights/", ...]` | The dataset folder must exist at the repo root with that exact name (it has a space and a hyphen). |
+| `graph_loaded: false` with a MongoDB error in logs | Numeric columns arriving as strings/nulls can misgroup during graph build. The generator runs `fillna(0)` first, but if a whole field is missing from the collection the graph may differ — confirm the collection matches the `central_bangalore_main_cluster` schema. |
 | Upload is huge / slow on `gcloud run deploy` | `.gcloudignore` isn't being picked up — confirm it's at the repo root so `node_modules`/`frontend` aren't uploaded. |
 | `ModuleNotFoundError: safe_route_engine` | `SAFEROUTE_ENGINE_DIR` doesn't point at the folder containing `safe_route_engine.py`. In the image it's `/app/engine`; don't override it unless you know the path. |
 | Changed `NEXT_PUBLIC_API_BASE` but frontend still hits old URL | It's inlined at build time — trigger a Vercel redeploy. |

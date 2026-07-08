@@ -60,10 +60,18 @@ def haversine_vec(lat1, lon1, lat2, lon2):
     return 2.0 * EARTH_R_M * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
 
 
-def main():
+def build_graph_files(df: pd.DataFrame, output_dir: Path) -> dict:
+    """Build graph_nodes/edges/hourly CSVs from a raw points DataFrame.
+
+    `df` carries the same columns as central_bangalore_main_cluster.csv (one row
+    per point: lat, lng, and the risk-factor attributes). This is used both by
+    the CLI below (reading INPUT_CSV) and by the backend (feeding rows straight
+    from MongoDB), so the graph comes out identical either way.
+
+    Returns a summary dict; writes the three CSVs into `output_dir`.
+    """
     t0 = time.time()
 
-    df = pd.read_csv(INPUT_CSV)
     df = df.reset_index(drop=True)
 
     if "road_name" in df.columns:
@@ -255,21 +263,38 @@ def main():
     largest_pct = 100.0 * largest_component_size / n if n else 0.0
     avg_degree = float(2 * E / n) if n else 0.0
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    nodes_df.to_csv(OUTPUT_DIR / "graph_nodes.csv", index=False)
-    edges_df.to_csv(OUTPUT_DIR / "graph_edges.csv", index=False)
-    hourly_df.to_csv(OUTPUT_DIR / "hourly_edge_weights.csv", index=False)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    nodes_df.to_csv(output_dir / "graph_nodes.csv", index=False)
+    edges_df.to_csv(output_dir / "graph_edges.csv", index=False)
+    hourly_df.to_csv(output_dir / "hourly_edge_weights.csv", index=False)
 
     elapsed = time.time() - t0
+    return {
+        "nodes": n,
+        "edges": E,
+        "static_components": n_static_comp,
+        "connected_components": n_graph_comp,
+        "largest_component": largest_component_size,
+        "largest_pct": largest_pct,
+        "avg_degree": avg_degree,
+        "safe_havens": int(is_safe_haven.sum()),
+        "elapsed_s": elapsed,
+    }
+
+
+def main():
+    df = pd.read_csv(INPUT_CSV)
+    stats = build_graph_files(df, OUTPUT_DIR)
     print("=== SafeRoute-AI v8 Graph Generation Summary ===")
-    print(f"Nodes: {n}")
-    print(f"Edges: {E}")
-    print(f"Static components (pre-bridge): {n_static_comp}")
-    print(f"Connected components (final): {n_graph_comp}")
-    print(f"Largest component: {largest_component_size} ({largest_pct:.2f}%)")
-    print(f"Average node degree: {avg_degree:.2f}")
-    print(f"Safe havens flagged: {int(is_safe_haven.sum())}")
-    print(f"Execution time: {elapsed:.2f}s")
+    print(f"Nodes: {stats['nodes']}")
+    print(f"Edges: {stats['edges']}")
+    print(f"Static components (pre-bridge): {stats['static_components']}")
+    print(f"Connected components (final): {stats['connected_components']}")
+    print(f"Largest component: {stats['largest_component']} ({stats['largest_pct']:.2f}%)")
+    print(f"Average node degree: {stats['avg_degree']:.2f}")
+    print(f"Safe havens flagged: {stats['safe_havens']}")
+    print(f"Execution time: {stats['elapsed_s']:.2f}s")
     print("Validation: PASSED")
 
 

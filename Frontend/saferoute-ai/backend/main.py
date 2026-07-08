@@ -44,10 +44,21 @@ ENGINE_DIR = Path(os.environ.get("SAFEROUTE_ENGINE_DIR", r"D:\Project\SafeRoute 
 DATA_DIR_ENV = os.environ.get("SAFEROUTE_DATA_DIR")  # None -> engine's own default
 OUTPUT_DIR = Path(os.environ.get("SAFEROUTE_OUTPUT_DIR", r"D:\Project\SafeRoute - Demo\Routes"))
 
+# Where the graph comes from:
+#   "csv"   -> read pre-built graph_*.csv from SAFEROUTE_DATA_DIR (local dev)
+#   "mongo" -> pull the raw cluster points from MongoDB and build the graph
+#              CSVs at startup (Cloud Run, so no datasets ship in the image)
+GRAPH_SOURCE = os.environ.get("SAFEROUTE_GRAPH_SOURCE", "csv").lower()
+
+# When building from Mongo we need a writable dir for the generated CSVs.
+# On Cloud Run only /tmp is writable; reuse SAFEROUTE_DATA_DIR if it's set.
+GRAPH_BUILD_DIR = Path(DATA_DIR_ENV) if DATA_DIR_ENV else Path("/tmp/saferoute_graph")
+
 if str(ENGINE_DIR) not in sys.path:
     sys.path.insert(0, str(ENGINE_DIR))
 
 import safe_route_engine as engine  # noqa: E402  (sys.path must be set first)
+import saferoute_graph_engine as graph_builder  # noqa: E402  (builds graph from points)
 
 import db  # noqa: E402  (local MongoDB helper; optional, config-gated)
 
@@ -70,15 +81,49 @@ def _data_dir() -> Optional[Path]:
     return Path(DATA_DIR_ENV) if DATA_DIR_ENV else None
 
 
+def _build_graph_dir_from_mongo(docs: List[Dict[str, Any]]) -> Path:
+    """
+    Turn the raw cluster points stored in MongoDB into the three graph CSVs the
+    engine expects, written to GRAPH_BUILD_DIR, and return that dir. Runs the
+    exact same generator the CLI uses, so the graph is identical to the CSVs.
+    """
+    import pandas as pd  # local import: only needed on the Mongo path
+
+    df = pd.DataFrame(docs).drop(columns=["_id"], errors="ignore")
+    stats = graph_builder.build_graph_files(df, GRAPH_BUILD_DIR)
+    print(f"[graph] built from MongoDB: {stats['nodes']} nodes, {stats['edges']} edges")
+    return GRAPH_BUILD_DIR
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fetch the collection once up front -- it feeds both the graph (in "mongo"
+    # mode) and the /api/risk-factors endpoint, so we don't want to query twice.
+    mongo_docs: Optional[List[Dict[str, Any]]] = None
+    if db.mongo_configured():
+        try:
+            mongo_docs = db.load_risk_factors()
+        except Exception as exc:  # noqa: BLE001  (pymongo raises several types)
+            state["error"] = f"MongoDB load failed: {exc}"
+
     try:
-        graph = engine.load_graph(_data_dir())
+        if GRAPH_SOURCE == "mongo":
+            if not mongo_docs:
+                raise RuntimeError(
+                    "SAFEROUTE_GRAPH_SOURCE=mongo but the MongoDB collection is "
+                    "unavailable or empty. Check MONGODB_URI/DB/COLLECTION and "
+                    "Atlas network access."
+                )
+            graph_dir: Optional[Path] = _build_graph_dir_from_mongo(mongo_docs)
+        else:
+            graph_dir = _data_dir()  # None -> engine's own default CSV dir
+
+        graph = engine.load_graph(graph_dir)
         engine.validate_graph(graph)
         engine.log_startup_summary(graph)
 
         try:
-            area_index = engine.load_area_index(_data_dir())
+            area_index = engine.load_area_index(graph_dir)
         except (FileNotFoundError, ValueError) as exc:
             # Areas are a convenience layer on top of graph_edges.csv; if the
             # columns aren't present, routing itself still works via raw
@@ -106,19 +151,16 @@ async def lifespan(app: FastAPI):
             "risk_engine_ready": False,
         }
 
-    # Optional MongoDB layer: load the risk-factor collection once, if
-    # configured. Any failure is non-fatal -- routing does not depend on it.
+    # Expose the same MongoDB docs read-only via /api/risk-factors.
     status = cast(Dict[str, Any], state["status"])
     if db.mongo_configured():
-        try:
-            docs = db.load_risk_factors()
-            state["risk_factors"] = docs
+        if mongo_docs is not None:
+            state["risk_factors"] = mongo_docs
             status["mongo_connected"] = True
-            status["risk_factor_count"] = len(docs)
-        except Exception as exc:  # noqa: BLE001  (pymongo raises several types)
+            status["risk_factor_count"] = len(mongo_docs)
+        else:
             status["mongo_connected"] = False
             status["risk_factor_count"] = 0
-            state["error"] = f"MongoDB load failed: {exc}"
     else:
         status["mongo_connected"] = False
 

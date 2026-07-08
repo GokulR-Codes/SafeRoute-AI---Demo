@@ -7,5 +7,6 @@
 **/__pycache__
 **/*.pyc
 Frontend/saferoute-ai/frontend
+Datasets
 Routes
 *.md
